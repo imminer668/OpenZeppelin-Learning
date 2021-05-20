@@ -113,5 +113,61 @@ contract SecureBank is Ownable, ReentrancyGuard {
         payable(owner()).sendValue(contractBalance);
     }
 }
+/**
+ *  VulnerableBank
+ * 有漏洞的银行 - 演示重入攻击
+ * 
+ * 此合约仅用于学习了解如何攻击，不要用于生产环境！
+ */
+contract VulnerableBank {
+    mapping(address => uint256) public balances;
+    
+    // 事件
+    event Deposit(address indexed user, uint256 amount);
+    event Withdraw(address indexed user, uint256 amount);
+    
+    /**
+     * 有漏洞的存款
+     * 问题：没有 CEI 模式，在转账后才更新余额
+     */
+    function deposit() external payable {
+        require(msg.value > 0, "Must deposit something");
+        balances[msg.sender] += msg.value;
+        emit Deposit(msg.sender, msg.value);
+    }
+    
+    /**
+     * 有漏洞的提现 - 易受重入攻击
+     * 
+     * 问题：
+     * 1. 先转账后更新余额
+     * 2. 没有 nonReentrant modifier
+     * 
+     * 攻击方式：
+     * 攻击者部署一个合约，在 fallback 中再次调用 withdraw()
+     * 由于余额还未清零，每次都能成功提取
+     */
+    function withdraw(uint256 amount) external {
+        require(balances[msg.sender] >= amount, "Insufficient balance");
+        
+        // 问题：先转账，后更新余额
+        (bool success, ) = msg.sender.call{value: amount}("");
+        require(success, "Transfer failed");
+        
+        // 这行代码在转账之后才执行，但攻击合约可以在此之前再次调用
+        balances[msg.sender] -= amount;
+        
+        emit Withdraw(msg.sender, amount);
+    }
+    
+    /**
+     * 获取合约余额
+     */
+    function getBalance() external view returns (uint256) {
+        return balances[msg.sender];
+    }
+    
+    receive() external payable {}
+}
 
 
